@@ -4,10 +4,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <nmea_msgs/Sentence.h>
+#include <std_msgs/String.h>
 #include <string>
 
 namespace {
     ros::Publisher nmea_pub;
+    ros::Publisher error_string_pub;
 }
 
 void publish(const char buf[], const int bufSize)
@@ -53,7 +55,8 @@ int main(int argc, char** argv)
     //サーバに接続
     connect(sock, (struct sockaddr *)&server, sizeof(server));
 
-    nmea_pub=nh.advertise<nmea_msgs::Sentence>("nmea_sentence",1);
+    nmea_pub = nh.advertise<nmea_msgs::Sentence>("nmea_sentence",1);
+    error_string_pub = nh.advertise<std_msgs::String>("nmea_sentence_error",1);
 
     //ros::Rate rate(1);
     while(ros::ok())
@@ -61,8 +64,20 @@ int main(int argc, char** argv)
         const int BUFSIZE = 400;
         char buf[BUFSIZE];
         int len=read(sock, buf, sizeof(buf));
-        if(len <= 0) continue;
-        if(len >= BUFSIZE) continue;
+        if(len <= 0)
+        {
+            std_msgs::String str;
+            str.data = "data size 0";
+            error_string_pub.publish(str);
+            continue;
+        }
+        if(len >= BUFSIZE)
+        {
+            std_msgs::String str;
+            str.data = "data size over";
+            error_string_pub.publish(str);
+            continue;
+        }
         buf[len]='\0';
         std::string str = buf;
         std::cout << str << std::endl;
