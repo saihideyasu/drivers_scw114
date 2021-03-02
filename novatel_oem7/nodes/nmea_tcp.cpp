@@ -1,15 +1,13 @@
 #include <ros/ros.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <nmea_msgs/Sentence.h>
-#include <std_msgs/String.h>
 #include <string>
+#include <boost/asio.hpp>
+#include <boost/algorithm/string.hpp>
+#include <nmea_msgs/Sentence.h>
+#include <autoware_msgs/NmeaArray.h>
+#include <std_msgs/String.h>
 
 namespace {
-    ros::Publisher nmea_pub;
-    ros::Publisher error_string_pub;
+    ros::Publisher nmea_pub, nmea_error_pub, nmea_string_pub;
 }
 
 void publish(const char buf[], const int bufSize)
@@ -27,7 +25,7 @@ std::string replaceOtherStr(const std::string &replacedStr, const char* from, co
     for(;;)
     {
         int pos = str.find(from);
-        std::cout << pos << std::endl;
+        //std::cout << pos << std::endl;
         if(pos < 0) break;
 
         str = str.replace(pos, 1, to);
@@ -38,57 +36,96 @@ std::string replaceOtherStr(const std::string &replacedStr, const char* from, co
 
 int main(int argc, char** argv)
 {
+    // initialize node
     ros::init(argc,argv,"nmea_tcp");
     ros::NodeHandle nh, private_nh("~");
+    nmea_pub=nh.advertise<nmea_msgs::Sentence>("nmea_sentence",1);
+    nmea_error_pub=nh.advertise<std_msgs::String>("nmea_error",1);
+    nmea_string_pub=nh.advertise<std_msgs::String>("nmea_string",1);
 
+    // setup server infomation
     std::string ip_str;
     private_nh.getParam("ip", ip_str);
-    std::cout << ip_str << std::endl;
-    int sock = socket(PF_INET, SOCK_STREAM, 0);//ソケットの作成
 
-    //接続先指定用構造体の準備
-    struct sockaddr_in server;
-    server.sin_family = PF_INET;
-    server.sin_port = htons(3001);
-    server.sin_addr.s_addr = inet_addr(ip_str.c_str());
+// debug
+//ip_str = "127.0.0.1";
 
-    //サーバに接続
-    connect(sock, (struct sockaddr *)&server, sizeof(server));
+    // connect server PortNo=3001
+    boost::asio::io_service io;
+    boost::asio::ip::tcp::socket sock(io);
+    boost::asio::ip::tcp::endpoint endpoint = boost::asio::ip::tcp::endpoint{boost::asio::ip::address::from_string(ip_str),3001};
+    sock.connect(endpoint);
 
-    nmea_pub = nh.advertise<nmea_msgs::Sentence>("nmea_sentence",1);
-    error_string_pub = nh.advertise<std_msgs::String>("nmea_sentence_error",1);
-
-    //ros::Rate rate(1);
+//    ros::Rate rate(1);
     while(ros::ok())
     {
-        const int BUFSIZE = 400;
-        char buf[BUFSIZE];
-        int len=read(sock, buf, sizeof(buf));
-        if(len <= 0)
-        {
-            std_msgs::String str;
-            str.data = "data size 0";
-            error_string_pub.publish(str);
-            continue;
-        }
-        if(len >= BUFSIZE)
-        {
-            std_msgs::String str;
-            str.data = "data size over";
-            error_string_pub.publish(str);
-            continue;
-        }
-        buf[len]='\0';
-        std::string str = buf;
-        std::cout << str << std::endl;
-        std::string rep = replaceOtherStr(str, "\"", "'");
-        rep = replaceOtherStr(rep, "\r\n", "\0");
-        publish(rep.c_str(), rep.size());
-        //std::cout << "size : " << len << std::endl;
-        printf("%s\n\n",buf);
-        //rate.sleep();
-    }
+        //read until "\r\n"
+        boost::system::error_code error;
+        boost::asio::streambuf readbuf;
+        boost::asio::read_until(sock,readbuf,"\r\n",error);
+        //boost::asio::read_until(sock,readbuf,"\n",error);
 
-    close(sock);
+        std::string all_str = boost::asio::buffer_cast<const char*>(readbuf.data());
+        std::vector<std::string> nmea_array;
+        boost::algorithm::split(nmea_array, all_str, boost::is_any_of("\n"), boost::algorithm::token_compress_on);//boost::is_any_of("\n"));
+
+        for(std::string nmea_parts : nmea_array)
+        {
+            std::cout << nmea_parts << std::endl;
+        }
+
+        for(std::string nmea_parts : nmea_array)
+        {
+            std::string::iterator begin = nmea_parts.begin();
+            std::string::iterator end = nmea_parts.end();
+            std::cout << *(end-1) << std::endl;
+            if(*begin == '#' && *(end-1) == '\r')
+            {//OK
+                publish(nmea_parts.c_str(), nmea_parts.size());
+                break;
+            }
+            else
+            {
+                std_msgs::String str_message;
+                str_message.data = nmea_parts;
+                nmea_string_pub.publish(str_message);
+            }
+        }
+
+        // check read error
+        /*if(error && (error != boost::asio::error::eof))
+        {
+            // Discard data
+            std_msgs::String str;
+            str.data = "error,eof";
+            nmea_error_pub.publish(str);
+            std::cout << "error,eof" << std::endl;
+            continue;
+        }else{
+            // Confirm that the data starts with "#""
+            std::string str = boost::asio::buffer_cast<const char *>(readbuf.data());
+            std_msgs::String str_message;
+            str_message.data = str;
+            nmea_string_pub.publish(str_message);
+            if( '#' != str.at(0))
+            {
+                // Discard data
+                std_msgs::String str_error;
+                str_error.data = "error,no #";
+                nmea_error_pub.publish(str_error);
+                std::cout << "error,not #" << std::endl;;
+                std::cout << str_message << std::endl;
+                continue;
+            }
+            // TODO Check CRC
+
+            // publish data
+            std::string rep = replaceOtherStr(str, "\"", "'");
+            rep = replaceOtherStr(rep, "\r\n", "\0");
+            publish(rep.c_str(), rep.size());
+        }*/
+//        rate.sleep();
+    }
     return 0;
 }
+
