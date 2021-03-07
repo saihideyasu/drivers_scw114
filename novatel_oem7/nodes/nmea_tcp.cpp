@@ -45,7 +45,9 @@ int main(int argc, char** argv)
 
     // setup server infomation
     std::string ip_str;
+    int port;
     private_nh.getParam("ip", ip_str);
+    private_nh.getParam("port", port);
 
 // debug
 //ip_str = "127.0.0.1";
@@ -53,7 +55,7 @@ int main(int argc, char** argv)
     // connect server PortNo=3001
     boost::asio::io_service io;
     boost::asio::ip::tcp::socket sock(io);
-    boost::asio::ip::tcp::endpoint endpoint = boost::asio::ip::tcp::endpoint{boost::asio::ip::address::from_string(ip_str),3001};
+    boost::asio::ip::tcp::endpoint endpoint = boost::asio::ip::tcp::endpoint{boost::asio::ip::address::from_string(ip_str), 3001};
     sock.connect(endpoint);
 
 //    ros::Rate rate(1);
