@@ -5,9 +5,10 @@
 #include <nmea_msgs/Sentence.h>
 #include <autoware_msgs/NmeaArray.h>
 #include <std_msgs/String.h>
+#include <std_msgs/Float64.h>
 
 namespace {
-    ros::Publisher nmea_pub, nmea_error_pub, nmea_string_pub;
+    ros::Publisher nmea_pub, nmea_error_pub, nmea_string_pub;//, time_diff_pub;
 }
 
 void publish(const char buf[], const int bufSize)
@@ -42,6 +43,7 @@ int main(int argc, char** argv)
     nmea_pub=nh.advertise<nmea_msgs::Sentence>("nmea_sentence",1);
     nmea_error_pub=nh.advertise<std_msgs::String>("nmea_error",1);
     nmea_string_pub=nh.advertise<std_msgs::String>("nmea_string",1);
+    //time_diff_pub = nh.advertise<std_msgs::Float64>("nmea_time_diff",1);
 
     // setup server infomation
     std::string ip_str;
@@ -59,12 +61,20 @@ int main(int argc, char** argv)
     sock.connect(endpoint);
 
 //    ros::Rate rate(1);
+    //ros::Time prev_time = ros::Time::now();
     while(ros::ok())
     {
         //read until "\r\n"
         boost::system::error_code error;
         boost::asio::streambuf readbuf;
         boost::asio::read_until(sock,readbuf,"\r\n",error);
+        /*ros::Time nowtime = ros::Time::now();
+        ros::Duration ros_time_diff = nowtime - prev_time;
+        double time_diff = ros_time_diff.sec + ros_time_diff.nsec * 1E-9;
+        std_msgs::Float64 tdpub;
+        tdpub.data = time_diff;
+        time_diff_pub.publish(tdpub);
+        prev_time = nowtime;*/
         //boost::asio::read_until(sock,readbuf,"\n",error);
 
         std::string all_str = boost::asio::buffer_cast<const char*>(readbuf.data());

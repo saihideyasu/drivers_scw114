@@ -6,10 +6,11 @@
 #include <termios.h>
 #include <unistd.h>
 #include <nmea_msgs/Sentence.h>
+#include <std_msgs/Float64.h>
 #include <string>
 
 namespace {
-    ros::Publisher nmea_pub;
+    ros::Publisher nmea_pub;//, time_diff_pub;
 }
 
 void publish(char buf[], const int bufSize)
@@ -148,12 +149,21 @@ int main(int argc, char** argv)
     ioctl(fd, TCSETS, &tio);            // ポートの設定を有効にする
 
     nmea_pub=nh.advertise<nmea_msgs::Sentence>("nmea_sentence",100,false);
+    //time_diff_pub = nh.advertise<std_msgs::Float64>("nmea_time_diff",1);
 
     //ros::Rate rate(1);
+    ros::Time prev_time = ros::Time::now();
     while(ros::ok())
     {
         char buf[300];
         len = read(fd, buf, sizeof(buf));
+        /*ros::Time nowtime = ros::Time::now();
+        ros::Duration ros_time_diff = nowtime - prev_time;
+        double time_diff = ros_time_diff.sec + ros_time_diff.nsec * 1E-9;
+        std_msgs::Float64 tdpub;
+        tdpub.data = time_diff;
+        time_diff_pub.publish(tdpub);
+        prev_time = nowtime;*/
         //std::cout<<buf<<std::endl;
         //std::cout<<len<<std::endl;
         if(len <= 0) continue;
